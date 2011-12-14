@@ -96,16 +96,23 @@ class LogStash::Filters::Date < LogStash::Filters::Base
         when "UNIX_MS" # unix epoch in ms
           parser = lambda { |date| org.joda.time.Instant.new(date.to_i).toDateTime }
         else
-          joda_parser = org.joda.time.format.DateTimeFormat.forPattern(format).withOffsetParsed
-          parser = lambda { |date| joda_parser.parseDateTime(date) }
-
-          # Joda's time parser doesn't assume 'current time' for unparsed values.
-          # That is, if you parse with format "mmm dd HH:MM:SS" (no year) then
-          # the year is assumed to be unix epoch year, 1970, rather than
-          # current year. This sucks, so try and keep track of fields that
-          # are not specified so we can inject them later. (jordansissel)
-          # LOGSTASH-34
-          missing = DATEPATTERNS.reject { |p| format.include?(p) }
+          if format.match(/SDF:(.+)/)
+            parser = lambda do |date| 
+              sdf_parser = java.text.SimpleDateFormat.new($1)
+              org.joda.time.DateTime.new(sdf_parser.parse(date))
+            end
+          else
+            joda_parser = org.joda.time.format.DateTimeFormat.forPattern(format).withOffsetParsed
+            parser = lambda { |date| joda_parser.parseDateTime(date) }
+  
+            # Joda's time parser doesn't assume 'current time' for unparsed values.
+            # That is, if you parse with format "mmm dd HH:MM:SS" (no year) then
+            # the year is assumed to be unix epoch year, 1970, rather than
+            # current year. This sucks, so try and keep track of fields that
+            # are not specified so we can inject them later. (jordansissel)
+            # LOGSTASH-34
+            missing = DATEPATTERNS.reject { |p| format.include?(p) }
+          end
         end
 
         @logger.debug("Adding type with date config", :type => @type,
