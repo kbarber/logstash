@@ -5,6 +5,7 @@
 #
 JRUBY_VERSION=1.6.5
 ELASTICSEARCH_VERSION=0.18.6
+ESPER_VERSION=4.4.0
 VERSION=$(shell ruby -r./lib/logstash/version -e 'puts LOGSTASH_VERSION')
 
 JRUBY_CMD=build/jruby/jruby-$(JRUBY_VERSION)/bin/jruby
@@ -14,6 +15,8 @@ JRUBY=vendor/jar/jruby-complete-$(JRUBY_VERSION).jar
 JRUBYC=java -Djruby.compat.version=RUBY1_9 -jar $(PWD)/$(JRUBY) -S jrubyc
 ELASTICSEARCH_URL=http://github.com/downloads/elasticsearch/elasticsearch
 ELASTICSEARCH=vendor/jar/elasticsearch-$(ELASTICSEARCH_VERSION)
+ESPER_URL=http://dist.codehaus.org/esper/esper-$(ESPER_VERSION).tar.gz
+ESPER=vendor/jar/esper-$(ESPER_VERSION)
 PLUGIN_FILES=$(shell git ls-files | egrep '^lib/logstash/(inputs|outputs|filters)/' | egrep -v '/base.rb$$')
 GEM_HOME=build/gems
 QUIET=@
@@ -92,12 +95,26 @@ vendor/jar/elasticsearch-$(ELASTICSEARCH_VERSION).tar.gz: | vendor/jar
 	$(QUIET)wget --no-check-certificate \
 		-O $@ $(ELASTICSEARCH_URL)/elasticsearch-$(ELASTICSEARCH_VERSION).tar.gz
 
+vendor/jar/esper-$(ESPER_VERSION).tar.gz: | vendor/jar
+	@echo "=> Fetching esper"
+	$(QUIET)wget -O $@ $(ESPER_URL)
+
 .PHONY: vendor-elasticsearch
 vendor-elasticsearch: $(ELASTICSEARCH)
 $(ELASTICSEARCH): $(ELASTICSEARCH).tar.gz | vendor/jar
 	@echo "=> Pulling the jars out of $<"
 	$(QUIET)tar -C $(shell dirname $@) -xf $< $(TAR_OPTS) --exclude '*sigar*' \
 		'elasticsearch-$(ELASTICSEARCH_VERSION)/lib/*.jar'
+
+.PHONY: vendor-esper
+vendor-esper: $(ESPER)
+$(ESPER): $(ESPER).tar.gz | vendor/jar
+	@echo "=> Pulling the jars out of $<"
+	$(QUIET)tar -C $(shell dirname $@) -xf $< $(TAR_OPTS) \
+		'esper-$(ESPER_VERSION)/esper-$(ESPER_VERSION).jar' \
+		'esper-$(ESPER_VERSION)/esper/lib/antlr-runtime-*.jar' \
+		'esper-$(ESPER_VERSION)/esper/lib/cglib-nodep-*.jar' \
+		'esper-$(ESPER_VERSION)/esper/lib/commons-logging-*.jar'
 
 # Always run vendor/bundle
 .PHONY: fix-bundler
@@ -131,7 +148,7 @@ build/ruby: | build
 # TODO(sissel): Skip sigar?
 # Run this one always? Hmm..
 .PHONY: build/monolith
-build/monolith: $(ELASTICSEARCH) $(JRUBY) vendor-gems | build
+build/monolith: $(ESPER) $(ELASTICSEARCH) $(JRUBY) vendor-gems | build
 build/monolith: compile copy-ruby-files
 	-$(QUIET)mkdir -p $@
 	@# Unpack all the 3rdparty jars and any jars in gems
@@ -163,7 +180,7 @@ build/logstash-$(VERSION)-monolithic.jar:
 	$(QUIET)jar i $@
 
 .PHONY: test
-test: | $(JRUBY_CMD) vendor-elasticsearch
+test: | $(JRUBY_CMD) vendor-elasticsearch vendor-esper
 	$(QUIET)bash $(JRUBY_CMD) bin/logstash test
 
 .PHONY: docs
